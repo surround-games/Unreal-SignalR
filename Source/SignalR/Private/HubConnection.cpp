@@ -275,6 +275,7 @@ void FHubConnection::OnConnectionClosed(int32 StatusCode, const FString& Reason,
     if (!bReceivedCloseMessage)
     {
         UE_LOG(LogSignalR, Warning, TEXT("The server was unexpectedly disconnected"));
+        UE_LOG(LogSignalR, Warning, TEXT("Disconnection reason: %s."), *Reason);
     }
 
 	if(Connection.IsValid())
