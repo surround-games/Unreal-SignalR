@@ -33,6 +33,37 @@
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 
+namespace
+{
+    FString BuildNegotiationErrorMessage(const FString& Message, const FHttpResponsePtr& Response)
+    {
+        FString ErrorMessage = Message;
+
+        if (Response.IsValid())
+        {
+            const int32 StatusCode = Response->GetResponseCode();
+            if (StatusCode > 0)
+            {
+                ErrorMessage = FString::Printf(TEXT("%s (HTTP %d)"), *ErrorMessage, StatusCode);
+            }
+
+            FString ResponseBody = Response->GetContentAsString().TrimStartAndEnd();
+            if (!ResponseBody.IsEmpty())
+            {
+                constexpr int32 MaxBodyLength = 256;
+                if (ResponseBody.Len() > MaxBodyLength)
+                {
+                    ResponseBody = ResponseBody.Left(MaxBodyLength) + TEXT("...");
+                }
+
+                ErrorMessage += FString::Printf(TEXT(" Body: %s"), *ResponseBody);
+            }
+        }
+
+        return ErrorMessage;
+    }
+}
+
 FConnection::FConnection(const FString& InHost, const TMap<FString, FString>& InHeaders):
     Host(InHost),
     Headers(InHeaders)
@@ -116,15 +147,25 @@ void FConnection::OnNegotiateResponse(FHttpRequestPtr InRequest, FHttpResponsePt
 {
     if (!bConnectedSuccessfully)
     {
-        UE_LOG(LogSignalR, Error, TEXT("Could not connect to host"))
-        OnConnectionFailedEvent.Broadcast();
+        const FString ErrorMessage = BuildNegotiationErrorMessage(TEXT("Could not connect to host during negotiate."), InResponse);
+        UE_LOG(LogSignalR, Error, TEXT("%s"), *ErrorMessage);
+        OnConnectionErrorEvent.Broadcast(ErrorMessage);
+        return;
+    }
 
+    if (!InResponse.IsValid())
+    {
+        const FString ErrorMessage = TEXT("Negotiate failed without an HTTP response.");
+        UE_LOG(LogSignalR, Error, TEXT("%s"), *ErrorMessage);
+        OnConnectionErrorEvent.Broadcast(ErrorMessage);
         return;
     }
 
     if(InResponse->GetResponseCode() != 200)
     {
-        UE_LOG(LogSignalR, Error, TEXT("Negotiate failed with status code %d"), InResponse->GetResponseCode());
+        const FString ErrorMessage = BuildNegotiationErrorMessage(TEXT("Negotiate failed."), InResponse);
+        UE_LOG(LogSignalR, Error, TEXT("%s"), *ErrorMessage);
+        OnConnectionErrorEvent.Broadcast(ErrorMessage);
         return;
     }
 
@@ -135,21 +176,29 @@ void FConnection::OnNegotiateResponse(FHttpRequestPtr InRequest, FHttpResponsePt
     {
         if(JsonObject->HasField(TEXT("error")))
         {
-            // TODO
+            const FString ErrorMessage = BuildNegotiationErrorMessage(
+                FString::Printf(TEXT("Negotiate returned an error: %s"), *JsonObject->GetStringField(TEXT("error"))),
+                InResponse);
+            UE_LOG(LogSignalR, Error, TEXT("%s"), *ErrorMessage);
+            OnConnectionErrorEvent.Broadcast(ErrorMessage);
+            return;
         }
         else
         {
             if (JsonObject->HasField(TEXT("ProtocolVersion")))
             {
-                UE_LOG(LogSignalR, Error, TEXT("Detected a connection attempt to an ASP.NET SignalR Server. This client only supports connecting to an ASP.NET Core SignalR Server. See https://aka.ms/signalr-core-differences for details."));
+                const FString ErrorMessage = TEXT("Detected an ASP.NET SignalR server. This client only supports ASP.NET Core SignalR.");
+                UE_LOG(LogSignalR, Error, TEXT("%s"), *ErrorMessage);
+                OnConnectionErrorEvent.Broadcast(ErrorMessage);
                 return;
             }
 
             if (JsonObject->HasTypedField<EJson::String>(TEXT("url")))
             {
                 FString RedirectionUrl = JsonObject->GetStringField(TEXT("url"));
-                FString AccessToken = JsonObject->GetStringField(TEXT("accessToken"));
-                // TODO: redirection
+                const FString ErrorMessage = FString::Printf(TEXT("SignalR negotiate redirection is not supported. Redirect url: %s"), *RedirectionUrl);
+                UE_LOG(LogSignalR, Error, TEXT("%s"), *ErrorMessage);
+                OnConnectionErrorEvent.Broadcast(ErrorMessage);
                 return;
             }
 
@@ -177,7 +226,9 @@ void FConnection::OnNegotiateResponse(FHttpRequestPtr InRequest, FHttpResponsePt
 
                 if(!bIsCompatible)
                 {
-                    UE_LOG(LogSignalR, Error, TEXT("The server does not support WebSockets which is currently the only transport supported by this client."));
+                    const FString ErrorMessage = TEXT("The server does not support WebSockets with Text transfer format.");
+                    UE_LOG(LogSignalR, Error, TEXT("%s"), *ErrorMessage);
+                    OnConnectionErrorEvent.Broadcast(ErrorMessage);
                     return;
                 }
             }
@@ -197,7 +248,9 @@ void FConnection::OnNegotiateResponse(FHttpRequestPtr InRequest, FHttpResponsePt
     }
     else
     {
-        UE_LOG(LogSignalR, Error, TEXT("Cannot parse negotiate response: %s"), *InResponse->GetContentAsString());
+        const FString ErrorMessage = BuildNegotiationErrorMessage(TEXT("Cannot parse negotiate response."), InResponse);
+        UE_LOG(LogSignalR, Error, TEXT("%s"), *ErrorMessage);
+        OnConnectionErrorEvent.Broadcast(ErrorMessage);
     }
 }
 
@@ -243,7 +296,9 @@ void FConnection::StartWebSocket()
     }
     else
     {
-        UE_LOG(LogSignalR, Error, TEXT("Cannot start websocket."));
+        const FString ErrorMessage = TEXT("Cannot start websocket.");
+        UE_LOG(LogSignalR, Error, TEXT("%s"), *ErrorMessage);
+        OnConnectionErrorEvent.Broadcast(ErrorMessage);
     }
 }
 

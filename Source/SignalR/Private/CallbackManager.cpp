@@ -44,7 +44,7 @@ TTuple<FName, IHubConnection::FOnMethodCompletion&> FCallbackManager::RegisterCa
     return TTuple<FName, IHubConnection::FOnMethodCompletion&>(Id, Callback);
 }
 
-bool FCallbackManager::InvokeCallback(FName InCallbackId, const FSignalRValue& InArguments, bool InRemoveCallback)
+bool FCallbackManager::InvokeCallback(FName InCallbackId, const FSignalRInvokeResult& InResult, bool InRemoveCallback)
 {
     IHubConnection::FOnMethodCompletion Callback;
 
@@ -64,7 +64,7 @@ bool FCallbackManager::InvokeCallback(FName InCallbackId, const FSignalRValue& I
         }
     }
 
-    Callback.ExecuteIfBound(InArguments);
+    Callback.ExecuteIfBound(InResult);
     return true;
 }
 

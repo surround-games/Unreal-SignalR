@@ -45,7 +45,7 @@ struct FNegotiationResponse
 	GENERATED_BODY()
 public:
 	UPROPERTY()
-	int32 NegotiateVersion;
+	int32 NegotiateVersion = 0;
 
 	UPROPERTY()
 	FString ConnectionId;

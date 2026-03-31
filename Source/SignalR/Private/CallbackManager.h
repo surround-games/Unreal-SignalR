@@ -34,7 +34,7 @@ public:
     ~FCallbackManager();
 
     TTuple<FName, IHubConnection::FOnMethodCompletion&> RegisterCallback();
-    bool InvokeCallback(FName InCallbackId, const FSignalRValue& InArguments, bool InRemoveCallback);
+    bool InvokeCallback(FName InCallbackId, const FSignalRInvokeResult& InResult, bool InRemoveCallback);
     bool RemoveCallback(FName InCallbackId);
     void Clear(const FString& ErrorMessage);
 

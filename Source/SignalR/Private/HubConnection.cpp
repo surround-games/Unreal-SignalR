@@ -138,12 +138,18 @@ void FHubConnection::ProcessMessage(const FString& InMessageStr)
 		{
 		    if(HandshakeResponseObject->HasField(TEXT("error")))
 		    {
-                UE_LOG(LogSignalR, Error, TEXT("Handshake error: %s"), *HandshakeResponseObject->GetStringField(TEXT("error")));
+                const FString ErrorMessage = FString::Printf(TEXT("Handshake error: %s"), *HandshakeResponseObject->GetStringField(TEXT("error")));
+                UE_LOG(LogSignalR, Error, TEXT("%s"), *ErrorMessage);
+                OnConnectionError(ErrorMessage);
+                Connection->Close();
                 return;
 		    }
             else if (HandshakeResponseObject->HasField(TEXT("type")))
             {
-                UE_LOG(LogSignalR, Error, TEXT("Received unexpected message while waiting for the handshake response."));
+                const FString ErrorMessage = TEXT("Received an unexpected message while waiting for the handshake response.");
+                UE_LOG(LogSignalR, Error, TEXT("%s"), *ErrorMessage);
+                OnConnectionError(ErrorMessage);
+                Connection->Close();
                 return;
             }
             else
@@ -159,10 +165,13 @@ void FHubConnection::ProcessMessage(const FString& InMessageStr)
                     Connection->Send(Call);
                 }
             }
-		}
+        }
         else
         {
-            UE_LOG(LogSignalR, Error, TEXT("Bad handshake response."));
+            const FString ErrorMessage = TEXT("Bad handshake response.");
+            UE_LOG(LogSignalR, Error, TEXT("%s"), *ErrorMessage);
+            OnConnectionError(ErrorMessage);
+            Connection->Close();
             return;
         }
 	}
@@ -199,6 +208,12 @@ void FHubConnection::ProcessMessage(const FString& InMessageStr)
             if(!CompletionMessage->Error.IsEmpty())
             {
                 UE_LOG(LogSignalR, Error, TEXT("%s"), *CompletionMessage->Error);
+
+                const FName InvocationId = FName(*CompletionMessage->InvocationId);
+                if (!CallbackManager.InvokeCallback(InvocationId, FSignalRInvokeResult::Error(CompletionMessage->Error), true))
+                {
+                    UE_LOG(LogSignalR, Warning, TEXT("No callback found for id: %s"), *InvocationId.ToString());
+                }
             }
             else
             {
@@ -221,17 +236,17 @@ void FHubConnection::ProcessMessage(const FString& InMessageStr)
             TSharedPtr<FCloseMessage> CloseMessage = StaticCastSharedPtr<FCloseMessage>(Message);
             check(CloseMessage != nullptr);
 
+            bReceivedCloseMessage = true;
+            bShouldReconnect = CloseMessage->bAllowReconnect.Get(false);
+
+            Stop();
+
             if (CloseMessage->Error.IsSet())
             {
                 FString CloseErrorMessage = CloseMessage->Error.GetValue();
                 UE_LOG(LogSignalR, Warning, TEXT("Received close message with error: %s"), *CloseErrorMessage);
                 OnHubConnectionErrorEvent.Broadcast(CloseErrorMessage);
             }
-
-            bReceivedCloseMessage = true;
-            bShouldReconnect = CloseMessage->bAllowReconnect.Get(false);
-
-            Stop();
             break;
         }
         default:
@@ -253,13 +268,20 @@ void FHubConnection::OnConnectionStarted()
 
 void FHubConnection::OnConnectionFailed()
 {
-    UE_LOG(LogSignalR, Verbose, TEXT("Connection to %s failed."), *Host)
-
-    OnHubConnectionErrorEvent.Broadcast(TEXT("Could not connect to host"));
+    UE_LOG(LogSignalR, Verbose, TEXT("Connection to %s failed."), *Host);
+    OnConnectionError(TEXT("Could not connect to host"));
 }
 
 void FHubConnection::OnConnectionError(const FString& InError)
 {
+    if(Connection.IsValid())
+    {
+        CallbackManager.Clear(InError);
+    }
+
+    bHandshakeReceived = false;
+    WaitingCalls.Reset();
+    ConnectionState = EConnectionState::Disconnected;
     OnHubConnectionErrorEvent.Broadcast(InError);
 
     if (bShouldReconnect)
@@ -281,6 +303,8 @@ void FHubConnection::OnConnectionClosed(int32 StatusCode, const FString& Reason,
 	{
         CallbackManager.Clear(TEXT("Connection was stopped before invocation result was received."));
 	}
+    bHandshakeReceived = false;
+    WaitingCalls.Reset();
     ConnectionState = EConnectionState::Disconnected;
     OnHubConnectionClosedEvent.Broadcast();
 
