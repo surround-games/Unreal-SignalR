@@ -214,7 +214,7 @@ FSignalRValue DeserializeValue(TSharedPtr<FJsonValue> InValue)
             TMap<FString, FSignalRValue> OutValues;
             for (const auto& Pair : InValue->AsObject()->Values)
             {
-                OutValues.Add(Pair.Key, DeserializeValue(Pair.Value));
+                OutValues.Add(FString(Pair.Key.ToView()), DeserializeValue(Pair.Value));
             }
             return FSignalRValue(MoveTemp(OutValues));
         }

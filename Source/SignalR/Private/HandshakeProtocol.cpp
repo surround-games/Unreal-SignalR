@@ -30,13 +30,9 @@
 
 FString FHandshakeProtocol::CreateHandshakeMessage(TSharedPtr<IHubProtocol> InProtocol)
 {
-    TMap<FString, TSharedPtr<FJsonValue>> Values
-    {
-        { "protocol", MakeShared<FJsonValueString>(InProtocol->Name().ToString()) },
-        { "version", MakeShared<FJsonValueNumber>(InProtocol->Version()) },
-    };
     TSharedPtr<FJsonObject> Obj = MakeShared<FJsonObject>();
-    Obj->Values = Values;
+    Obj->SetStringField(TEXT("protocol"), InProtocol->Name().ToString());
+    Obj->SetNumberField(TEXT("version"), InProtocol->Version());
 
     FString Out;
     TSharedRef<TJsonWriter<>> JsonWriter = TJsonWriterFactory<>::Create(&Out);
